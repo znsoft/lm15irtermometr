@@ -192,6 +192,7 @@ void autocalibrate(void){
   printLCD("calibrating...", 0, 0, 1, ORANGE, BLACK);
   printdouble((double)analogRead(1), 1, 4, 1, WHITE, BLACK);
   int i,u,v = analogRead(1);
+//    for(i = 0;i < 100;i++) v=(v+analogRead(1));
     for(i = 0;i < 100;i++) if (v != analogRead(1)) return;
     calibrate = true;
     centr = v;
@@ -200,12 +201,31 @@ void autocalibrate(void){
 
 }
 
+
+
+
+void screentest(void){
+  //lcd.clear_lcd(BLACK);
+  for(int y = 0;y < ScreenSizeY ; y++) 
+  for(int x = 0;x < ScreenSizeX ; x++)
+    lcd.pixel_lcd(x,y, (x ^ y)^analogRead(1) );
+
+}
+
+
+//------------------------------------------------------------------------
 void loop()
 {
   iamp = analogRead(0);
   amp = Thermister(iamp);  // Read sensor
   printLowHigh();
 
+desktop();
+takeControlsKey();
+  //  gtime++; 
+}
+
+void desktop(void){
   switch(mode){
   case 0:
     printTemp();
@@ -225,9 +245,17 @@ void loop()
     if(!calibrate){autocalibrate();}else{    oscilograph1();}
     //delay(300);
     break;
+  case 4:
+    screentest();
+    break;
 
   }
 
+
+}
+
+
+void takeControlsKey(void){
   if (irrecv.decode(&results)) {
     switch(results.value){
     case KEY_SHOT:
@@ -243,7 +271,7 @@ void loop()
       mode = 1;
       break;
     case KEY_SOURCE:
-      mode= (mode+1)%4;
+      mode= (mode+1)%5;
       pos = 0;
       lcd.clear_lcd(BLACK);      
       break;
@@ -256,6 +284,12 @@ void loop()
       pos = 0;
       calibrate = false;ang = 0.0;
       lcd.clear_lcd(BLACK);
+      break;
+    case KEY_FULLSCR:
+      mode= 4;
+      pos = 0;
+      lcd.clear_lcd(BLACK);
+      
       break;
     case KEY_PLUS:
       //slowG += 2;
@@ -273,8 +307,6 @@ void loop()
 
     irrecv.resume(); // Receive the next value
   }
-
-  //  gtime++; 
 }
 
 
