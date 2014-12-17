@@ -38,9 +38,13 @@
 
 int RECV_PIN = 2;
 IRrecv irrecv(RECV_PIN);
-boolean ShowGraph;
-boolean ShowLow;
-
+//boolean ShowGraph;
+//boolean ShowLow;
+double filtercoef;
+//int sensVal;           // for raw sensor values from http://playground.arduino.cc/Main/Smooth
+//double filterVal;       // this determines smoothness  - .0001 is max  1 is off (no smoothing)
+double smoothedVal;     // this holds the last loop value just use a unique variable for every different sensor that needs smoothing
+//double smoothedVal2;
 decode_results results;
 LM15SGFNZ07SPI lcd(9,12,10); 
 // [SDATA,SCLK,RS,RESET,CS][красный, белый , зеленый черный коричневый] {синий = gnd, желтый = 3.3В}
@@ -65,13 +69,15 @@ unsigned char pos;
 double lowtemp = 100.0;
 double hightemp = -100.0;
 double amp,ang = 0.0;
+//double angle;
 unsigned char mode = 0;
-int iamp,imin,imax;
+int iamp,imin,imax,angl;
 int g360,centr;
 boolean calibrate = false;
 
 void setup()
 {
+  filtercoef = 0.0001;
   //  Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
   // irrecv.blink13(true);
@@ -150,7 +156,7 @@ void printlh(void){
 }
 
 void printdouble(double t, unsigned char x, unsigned char y, unsigned int size, unsigned int color_font, unsigned int color){
-  char buffer[5];
+  char buffer[50];
   dtostrf(t, 5, 1, buffer);
   printLCD(buffer, x, y, size, color_font, color);
 }
@@ -201,18 +207,48 @@ void autocalibrate(void){
 
 }
 
+double smoothtest(double filt,double angle){
 
+  double oldacc = smoothedVal;  
+  for(pos = 0;pos < ScreenSizeX;pos++)  graph[pos]=analogRead(1);
+  for(pos = 0;pos < ScreenSizeX;pos++)  {smooth(graph[pos]>>1, filt);}
+  
+  //printdouble(smoothedVal, 3, 0, 1, WHITE, BLACK);
+  //printdouble(filt*1000.0, 3, 3, 1, WHITE, BLACK);
+  oldacc -= smoothedVal;
+  printdouble(oldacc, 2, 4, 1, BLUE | GREEN, BLACK);
+  
+  angl =  (int)(oldacc) + angl;
+  if(angl>100)angl = 100;
+  if(angl<-100)angl = -100;
+
+printdouble((double)angl, 3, 2, 1, RED, BLACK);
+  return angle;
+}
 
 
 void screentest(void){
   //lcd.clear_lcd(BLACK);
   for(int y = 0;y < ScreenSizeY ; y++) 
   for(int x = 0;x < ScreenSizeX ; x++)
-    lcd.pixel_lcd(x,y, (x ^ y)^analogRead(1) );
+    lcd.pixel_lcd(x,y, (x ^ y)*analogRead(1) );
 
 }
 
+double smooth(int data, double filterVal){
 
+
+  if (filterVal > 1){      // check to make sure param's are within range
+    filterVal = .99;
+  }
+  else if (filterVal <= 0){
+    filterVal = 0;
+  }
+
+  smoothedVal = (data * (1.0 - filterVal)) + (smoothedVal  *  filterVal);
+
+  return smoothedVal;
+}
 //------------------------------------------------------------------------
 void loop()
 {
@@ -248,6 +284,10 @@ void desktop(void){
   case 4:
     screentest();
     break;
+  case 5:
+    ang = smoothtest(filtercoef,ang);
+      
+    break;
 
   }
 
@@ -271,7 +311,7 @@ void takeControlsKey(void){
       mode = 1;
       break;
     case KEY_SOURCE:
-      mode= (mode+1)%5;
+      mode= (mode+1)%6;
       pos = 0;
       lcd.clear_lcd(BLACK);      
       break;
@@ -291,11 +331,16 @@ void takeControlsKey(void){
       lcd.clear_lcd(BLACK);
       
       break;
+    case KEY_POWER:
+      mode= 5;
+      ang = 1.0;
+      lcd.clear_lcd(BLACK);
+      break;
     case KEY_PLUS:
-      //slowG += 2;
+      filtercoef += 0.0001;
       break;
     case KEY_MINUS:
-      //  slowG -= 2;
+      filtercoef -= 0.0001;
       break;
     case KEY_UP:
       //      GraphShiftY--;
