@@ -3,6 +3,8 @@
 #include <LM15SGFNZ07SPI.h>
 #include <IRremote.h>
 #include <math.h>
+#include <util/delay.h> 
+
 
 //пульт от тюнера manli
 #define KEY_MUTE 0x61D6C837
@@ -64,6 +66,7 @@ LM15SGFNZ07SPI lcd(9,12,10);
 #define ScreenSizeX 101
 #define ScreenSizeY 80
 #define CenterY 40
+#define Soundpin 7
 int graph[ScreenSizeX + 1];
 unsigned char pos;
 double lowtemp = 100.0;
@@ -74,6 +77,17 @@ unsigned char mode = 0;
 int iamp,imin,imax,angl;
 int g360,centr;
 boolean calibrate = false;
+
+volatile unsigned int tachBuf; 
+
+unsigned long tachValue; 
+
+ISR(TIMER1_CAPT_vect) 
+{ 
+  TCNT1 = 0; 
+  tachBuf = ICR1 + 120; 
+} 
+
 
 void setup()
 {
@@ -88,6 +102,82 @@ void setup()
   prepareDisp();
   pos = 0;
   //  GraphShiftY = 200;
+  pinMode(Soundpin, OUTPUT);
+
+  Sound();
+  initfreqmeter();
+}
+
+
+void TIM_Init(void){
+  TIMSK1=(1<<ICIE1);
+  TCCR1A=(0<<COM1A1)|(0<<COM1A0)|(0<<WGM11)|(0<<WGM10); 
+  TCCR1B=(1<<ICNC1)|(1<<ICES1)|(0<<WGM13)|(0<<WGM12)|(0<<CS12)|(0<<CS11)|(1<<CS10); 
+  TCNT1 = 0; 
+}
+
+void initfreqmeter(void){
+
+  pinMode(8, INPUT);
+  //Вход частотомера для импульсов TTL
+//  pinMode(6, OUTPUT);
+  //выход ШИМ для тестирования частотомера 
+//  TCCR0B = TCCR0B & 0b11111000 | 1;
+  //частота ШИМ 62500Гц analogWrite(6, 128); 
+//  analogWrite(6, 128); 
+  //Запустить ШИМ 
+//  digitalWrite(8, HIGH); 
+  // включить подтяжку входа 
+  //Serial.begin(115200); 
+  TIM_Init();
+  //_delay_ms(300); 
+}
+
+unsigned long mesurefreq(void){
+cli(); 
+tachValue = 16000000/tachBuf;
+sei();
+return tachValue; 
+}
+
+void freqMeter(void){
+  unsigned long frq = mesurefreq();
+  printdouble((double)(frq), 1, 4, 1, RED, BLACK);
+  printLCD("Hz", 8, 4, 1, GREEN, BLACK);
+  printdouble((double)tachBuf, 1, 5, 1, BLUE, BLACK);
+}
+
+
+void mydelay(long mili){
+  int i;
+for(;mili--;)i++;
+
+}
+
+void mytone(int vol,unsigned int freq,unsigned int len){
+  boolean b = false;
+unsigned int l = len;
+  cli(); 
+  for(;l>0;l--)
+  for(;len>0;len--){
+    
+    b = !b;
+    //analogWrite(Soundpin, b?vol:0);
+      digitalWrite(Soundpin, b);
+    mydelay(freq);
+  }
+  //analogWrite(Soundpin, 0);
+  digitalWrite(Soundpin, LOW);
+  sei();
+
+}
+
+void Sound(){
+  /*mytone(255,5,100);
+   mytone(255,17,100);
+   mytone(255,9,100);
+   mytone(255,40,100);
+   */
 }
 
 void prepareDisp(){
@@ -180,13 +270,13 @@ void oscilograph(void){
 void oscilograph1(void){
 
 
-    int i,u = 0;
-    for(i = 0;i < 8;i++) u += analogRead(1);
-    u = (u >> 3) - centr;
-double acc = (double)u / 5.0;
-ang+=acc;
-//  printLCD("calibrating...", 0, 0, 1, ORANGE, BLACK);
-  
+  int i,u = 0;
+  for(i = 0;i < 8;i++) u += analogRead(1);
+  u = (u >> 3) - centr;
+  double acc = (double)u / 5.0;
+  ang+=acc;
+  //  printLCD("calibrating...", 0, 0, 1, ORANGE, BLACK);
+
   printdouble(acc, 1, 0, 2, WHITE, BLACK);
   printdouble(ang, 1, 1, 2, WHITE, BLACK);
   printdouble((double)centr, 4, 4, 1, RED, BLACK);
@@ -198,12 +288,12 @@ void autocalibrate(void){
   printLCD("calibrating...", 0, 0, 1, ORANGE, BLACK);
   printdouble((double)analogRead(1), 1, 4, 1, WHITE, BLACK);
   int i,u,v = analogRead(1);
-//    for(i = 0;i < 100;i++) v=(v+analogRead(1));
-    for(i = 0;i < 100;i++) if (v != analogRead(1)) return;
-    calibrate = true;
-    centr = v;
-    g360 = centr<<1;
-        lcd.clear_lcd(BLACK);
+  //    for(i = 0;i < 100;i++) v=(v+analogRead(1));
+  for(i = 0;i < 100;i++) if (v != analogRead(1)) return;
+  calibrate = true;
+  centr = v;
+  g360 = centr<<1;
+  lcd.clear_lcd(BLACK);
 
 }
 
@@ -211,18 +301,20 @@ double smoothtest(double filt,double angle){
 
   double oldacc = smoothedVal;  
   for(pos = 0;pos < ScreenSizeX;pos++)  graph[pos]=analogRead(1);
-  for(pos = 0;pos < ScreenSizeX;pos++)  {smooth(graph[pos]>>1, filt);}
-  
+  for(pos = 0;pos < ScreenSizeX;pos++)  {
+    smooth(graph[pos]>>1, filt);
+  }
+
   //printdouble(smoothedVal, 3, 0, 1, WHITE, BLACK);
   //printdouble(filt*1000.0, 3, 3, 1, WHITE, BLACK);
   oldacc -= smoothedVal;
   printdouble(oldacc, 2, 4, 1, BLUE | GREEN, BLACK);
-  
+
   angl =  (int)(oldacc) + angl;
   if(angl>100)angl = 100;
   if(angl<-100)angl = -100;
 
-printdouble((double)angl, 3, 2, 1, RED, BLACK);
+  printdouble((double)angl, 3, 2, 1, RED, BLACK);
   return angle;
 }
 
@@ -230,10 +322,67 @@ printdouble((double)angl, 3, 2, 1, RED, BLACK);
 void screentest(void){
   //lcd.clear_lcd(BLACK);
   for(int y = 0;y < ScreenSizeY ; y++) 
-  for(int x = 0;x < ScreenSizeX ; x++)
-    lcd.pixel_lcd(x,y, (x ^ y)*analogRead(1) );
+    for(int x = 0;x < ScreenSizeX ; x++)
+      lcd.pixel_lcd(x,y, (x ^ y)*analogRead(1) );
 
 }
+
+void demo(void){
+  
+  //----------------mandelbrot--------------
+int px,py;// = 1234;
+//int py = 456;
+int pz=7,deep=29;//,dp=11;
+float xf=1.8f,yf=0.001f;
+
+  printLCD("start...", 0, 0, 1, ORANGE, BLACK);
+
+
+	int xs,k,x,y,xi=0,yi=0,zi,zc,yc,xt,yt;
+
+	float b,a,r,t,i,s;
+
+	xs=ScreenSizeX;y=ScreenSizeY;yc=y/2;
+
+	zc=pz*pz*pz;
+
+	zi=zc+1;
+
+	xi=xs/2;
+
+	yi=yc;
+
+	s=(float)zc/5.0f;
+
+	xf=(float)px/s+xf;
+
+	yf=(float)py/s+yf;
+
+	px=xf*10000;py=yf*10000;
+
+	px=0;py=0;
+
+
+	for(;y--;b=(float)(y-yi)/zi-yf)for(x=xs;x--;){
+
+			a=(float)(x-xi)/zi-xf;
+
+			r=i=0;
+
+			for(k=deep;--k&&4>r*r+i*i;i=t){	t=2.0f*r*i+b;r=r*r-i*i+a;}//main interation deep loop
+
+//-----------------------------color pallete work-----------------------------
+      lcd.pixel_lcd(x,y, k*1234);
+			}
+//}
+  
+    printLCD("end...", 0, 1, 1, ORANGE, BLACK);
+mytone(255,100,55000);
+//  for(int y = 0;y < ScreenSizeY ; y++) 
+//    for(int x = 0;x < ScreenSizeX ; x++)
+
+}
+
 
 double smooth(int data, double filterVal){
 
@@ -256,8 +405,8 @@ void loop()
   amp = Thermister(iamp);  // Read sensor
   printLowHigh();
 
-desktop();
-takeControlsKey();
+  desktop();
+  takeControlsKey();
   //  gtime++; 
 }
 
@@ -278,7 +427,12 @@ void desktop(void){
     //delay(1000);
     break;   
   case 3:
-    if(!calibrate){autocalibrate();}else{    oscilograph1();}
+    if(!calibrate){
+      autocalibrate();
+    }
+    else{    
+      oscilograph1();
+    }
     //delay(300);
     break;
   case 4:
@@ -286,7 +440,13 @@ void desktop(void){
     break;
   case 5:
     ang = smoothtest(filtercoef,ang);
-      
+
+    break;
+  case 6:
+    freqMeter();
+    break;
+  case 7:
+    demo();
     break;
 
   }
@@ -301,39 +461,54 @@ void takeControlsKey(void){
     case KEY_SHOT:
       Redraw1();
       mode = 1;
+      Sound();
       break;
     case KEY_T:
       Redraw0();
       mode = 0;
+      Sound();
       break;
     case KEY_REC:
       Redraw1();
       mode = 1;
+      Sound();
       break;
     case KEY_SOURCE:
-      mode= (mode+1)%6;
+      mode= (mode+1)%8;
       pos = 0;
       lcd.clear_lcd(BLACK);      
+      Sound();
       break;
     case KEY_STOP:
       mode= 2;
-
+      Sound();
       break;
     case KEY_PAUSE:
       mode= 3;
       pos = 0;
-      calibrate = false;ang = 0.0;
+      calibrate = false;
+      ang = 0.0;
       lcd.clear_lcd(BLACK);
+      Sound();
       break;
     case KEY_FULLSCR:
       mode= 4;
       pos = 0;
       lcd.clear_lcd(BLACK);
-      
+      Sound();      
       break;
     case KEY_POWER:
+      Sound();
       mode= 5;
       ang = 1.0;
+      lcd.clear_lcd(BLACK);
+      break;
+    case KEY_STEREO:
+      mode= 6;
+      lcd.clear_lcd(BLACK);
+      break;
+    case KEY_MUTE:
+      mode= 7;
       lcd.clear_lcd(BLACK);
       break;
     case KEY_PLUS:
@@ -353,6 +528,7 @@ void takeControlsKey(void){
     irrecv.resume(); // Receive the next value
   }
 }
+
 
 
 
