@@ -48,25 +48,29 @@ double filtercoef;
 double smoothedVal;     // this holds the last loop value just use a unique variable for every different sensor that needs smoothing
 //double smoothedVal2;
 decode_results results;
-LM15SGFNZ07SPI lcd(9,12,10); 
+LM15SGFNZ07SPI lcd(9,12,10); //( byte RS, byte RESET, byte CS)
+//*  the 13 pin is always SCLK 
+//*   and 11 pin always SDATA for fast SPI 
 // [SDATA,SCLK,RS,RESET,CS][красный, белый , зеленый черный коричневый] {синий = gnd, желтый = 3.3В}
 /*  new
  PIN LCD	PIN ARDUINO
- 1	10  CS       10
- 2	8  RESET     8
- 3	6  RS        9
- 4	13  SCLK     13
- 5	11  SDATA    11
+ 1	  CS       10   красный
+ 2	  RESET     12    белый
+ 3	  RS        9    зеленый 
+ 4	13  SCLK     13(const)   черный 
+ 5	11  SDATA    11(const)   коричневый
  6	3.3V
- 7	GND
- 8	3.3V
+ 7	GND               синий
+ 8	3.3V              желтый
  9	GND
  10	3.3V
  */
 #define ScreenSizeX 101
 #define ScreenSizeY 80
 #define CenterY 40
-#define Soundpin 7
+//#define Soundpin 7
+#define laserGndpin 7
+#define laserPWMpin 6
 int graph[ScreenSizeX + 1];
 unsigned char pos;
 double lowtemp = 100.0;
@@ -75,22 +79,27 @@ double amp,ang = 0.0;
 //double angle;
 unsigned char mode = 0;
 int iamp,imin,imax,angl;
-int g360,centr;
+int g360,centr,pwm = 0;
 boolean calibrate = false;
 
 volatile unsigned int tachBuf; 
 
 unsigned long tachValue; 
 
-ISR(TIMER1_CAPT_vect) 
-{ 
-  TCNT1 = 0; 
-  tachBuf = ICR1 + 120; 
-} 
+//ISR(TIMER1_CAPT_vect) 
+//{ 
+//  TCNT1 = 0; 
+//  tachBuf = ICR1 + 120; 
+//} 
 
 
 void setup()
 {
+    pinMode(laserGndpin, OUTPUT);
+    digitalWrite(laserGndpin, LOW);
+    pinMode(laserPWMpin, OUTPUT);
+  //digitalWrite(laserPWMpin, LOW);
+analogWrite(laserPWMpin, pwm);
   filtercoef = 0.0001;
   //  Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
@@ -102,10 +111,10 @@ void setup()
   prepareDisp();
   pos = 0;
   //  GraphShiftY = 200;
-  pinMode(Soundpin, OUTPUT);
+//  pinMode(Soundpin, OUTPUT);
 
-  Sound();
-  initfreqmeter();
+  //Sound();
+ // initfreqmeter();
 }
 
 
@@ -163,11 +172,11 @@ unsigned int l = len;
     
     b = !b;
     //analogWrite(Soundpin, b?vol:0);
-      digitalWrite(Soundpin, b);
+//      digitalWrite(Soundpin, b);
     mydelay(freq);
   }
   //analogWrite(Soundpin, 0);
-  digitalWrite(Soundpin, LOW);
+//  digitalWrite(Soundpin, LOW);
   sei();
 
 }
@@ -518,10 +527,18 @@ void takeControlsKey(void){
       filtercoef -= 0.0001;
       break;
     case KEY_UP:
-      //      GraphShiftY--;
+      pwm+=10;
+            //if(pwm>100)pwm = 100;
+    analogWrite(laserPWMpin, pwm);
+  printdouble((double)pwm, 1, 4, 1, GREEN, BLACK);
+
       break;
     case KEY_DOWN:
-      //    GraphShiftY++;
+      pwm-=10;
+      if(pwm<0)pwm = 0;
+      analogWrite(laserPWMpin, pwm);
+  printdouble((double)pwm, 1, 4, 1, GREEN, BLACK);
+
       break;
     }
 
