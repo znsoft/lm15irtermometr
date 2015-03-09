@@ -36,19 +36,10 @@
 #define KEY_RW 0x61D6F00F
 #define KEY_FW 0x61D658A7
 
-
-
 int RECV_PIN = 2;
 IRrecv irrecv(RECV_PIN);
-//boolean ShowGraph;
-//boolean ShowLow;
-double filtercoef;
-//int sensVal;           // for raw sensor values from http://playground.arduino.cc/Main/Smooth
-//double filterVal;       // this determines smoothness  - .0001 is max  1 is off (no smoothing)
-double smoothedVal;     // this holds the last loop value just use a unique variable for every different sensor that needs smoothing
-//double smoothedVal2;
 decode_results results;
-LM15SGFNZ07SPI lcd(9,12,10); //( byte RS, byte RESET, byte CS)
+LM15SGFNZ07SPI lcd(9,8,10); //( byte RS, byte RESET, byte CS)
 //*  the 13 pin is always SCLK 
 //*   and 11 pin always SDATA for fast SPI 
 // [SDATA,SCLK,RS,RESET,CS][красный, белый , зеленый черный коричневый] {синий = gnd, желтый = 3.3В}
@@ -86,107 +77,17 @@ volatile unsigned int tachBuf;
 
 unsigned long tachValue; 
 
-//ISR(TIMER1_CAPT_vect) 
-//{ 
-//  TCNT1 = 0; 
-//  tachBuf = ICR1 + 120; 
-//} 
-
 
 void setup()
 {
-    pinMode(laserGndpin, OUTPUT);
-    digitalWrite(laserGndpin, LOW);
-    pinMode(laserPWMpin, OUTPUT);
-  //digitalWrite(laserPWMpin, LOW);
-analogWrite(laserPWMpin, pwm);
-  filtercoef = 0.0001;
-  //  Serial.begin(9600);
   irrecv.enableIRIn(); // Start the receiver
-  // irrecv.blink13(true);
   pinMode(RECV_PIN + 1, OUTPUT);
   digitalWrite(RECV_PIN + 1, LOW);
   pinMode(RECV_PIN + 2, OUTPUT);
   digitalWrite(RECV_PIN + 2, HIGH);
   prepareDisp();
   pos = 0;
-  //  GraphShiftY = 200;
-//  pinMode(Soundpin, OUTPUT);
-
-  //Sound();
- // initfreqmeter();
-}
-
-
-void TIM_Init(void){
-  TIMSK1=(1<<ICIE1);
-  TCCR1A=(0<<COM1A1)|(0<<COM1A0)|(0<<WGM11)|(0<<WGM10); 
-  TCCR1B=(1<<ICNC1)|(1<<ICES1)|(0<<WGM13)|(0<<WGM12)|(0<<CS12)|(0<<CS11)|(1<<CS10); 
-  TCNT1 = 0; 
-}
-
-void initfreqmeter(void){
-
-  pinMode(8, INPUT);
-  //Вход частотомера для импульсов TTL
-//  pinMode(6, OUTPUT);
-  //выход ШИМ для тестирования частотомера 
-//  TCCR0B = TCCR0B & 0b11111000 | 1;
-  //частота ШИМ 62500Гц analogWrite(6, 128); 
-//  analogWrite(6, 128); 
-  //Запустить ШИМ 
-//  digitalWrite(8, HIGH); 
-  // включить подтяжку входа 
-  //Serial.begin(115200); 
-  TIM_Init();
-  //_delay_ms(300); 
-}
-
-unsigned long mesurefreq(void){
-cli(); 
-tachValue = 16000000/tachBuf;
-sei();
-return tachValue; 
-}
-
-void freqMeter(void){
-  unsigned long frq = mesurefreq();
-  printdouble((double)(frq), 1, 4, 1, RED, BLACK);
-  printLCD("Hz", 8, 4, 1, GREEN, BLACK);
-  printdouble((double)tachBuf, 1, 5, 1, BLUE, BLACK);
-}
-
-
-void mydelay(long mili){
-  int i;
-for(;mili--;)i++;
-
-}
-
-void mytone(int vol,unsigned int freq,unsigned int len){
-  boolean b = false;
-unsigned int l = len;
-  cli(); 
-  for(;l>0;l--)
-  for(;len>0;len--){
-    
-    b = !b;
-    //analogWrite(Soundpin, b?vol:0);
-//      digitalWrite(Soundpin, b);
-    mydelay(freq);
-  }
-  //analogWrite(Soundpin, 0);
-//  digitalWrite(Soundpin, LOW);
-  sei();
-
-}
-
-void Sound(){
-  /*mytone(255,5,100);
-   mytone(255,17,100);
-   mytone(255,9,100);
-   mytone(255,40,100);
-   */
+  mode = 0;
 }
 
 void prepareDisp(){
@@ -306,27 +207,6 @@ void autocalibrate(void){
 
 }
 
-double smoothtest(double filt,double angle){
-
-  double oldacc = smoothedVal;  
-  for(pos = 0;pos < ScreenSizeX;pos++)  graph[pos]=analogRead(1);
-  for(pos = 0;pos < ScreenSizeX;pos++)  {
-    smooth(graph[pos]>>1, filt);
-  }
-
-  //printdouble(smoothedVal, 3, 0, 1, WHITE, BLACK);
-  //printdouble(filt*1000.0, 3, 3, 1, WHITE, BLACK);
-  oldacc -= smoothedVal;
-  printdouble(oldacc, 2, 4, 1, BLUE | GREEN, BLACK);
-
-  angl =  (int)(oldacc) + angl;
-  if(angl>100)angl = 100;
-  if(angl<-100)angl = -100;
-
-  printdouble((double)angl, 3, 2, 1, RED, BLACK);
-  return angle;
-}
-
 
 void screentest(void){
   //lcd.clear_lcd(BLACK);
@@ -386,27 +266,13 @@ float xf=1.8f,yf=0.001f;
 //}
   
     printLCD("end...", 0, 1, 1, ORANGE, BLACK);
-mytone(255,100,55000);
+
 //  for(int y = 0;y < ScreenSizeY ; y++) 
 //    for(int x = 0;x < ScreenSizeX ; x++)
 
 }
 
 
-double smooth(int data, double filterVal){
-
-
-  if (filterVal > 1){      // check to make sure param's are within range
-    filterVal = .99;
-  }
-  else if (filterVal <= 0){
-    filterVal = 0;
-  }
-
-  smoothedVal = (data * (1.0 - filterVal)) + (smoothedVal  *  filterVal);
-
-  return smoothedVal;
-}
 //------------------------------------------------------------------------
 void loop()
 {
@@ -448,14 +314,12 @@ void desktop(void){
     screentest();
     break;
   case 5:
-    ang = smoothtest(filtercoef,ang);
-
     break;
   case 6:
-    freqMeter();
+ 
     break;
   case 7:
-    demo();
+  
     break;
 
   }
@@ -470,27 +334,27 @@ void takeControlsKey(void){
     case KEY_SHOT:
       Redraw1();
       mode = 1;
-      Sound();
+
       break;
     case KEY_T:
       Redraw0();
       mode = 0;
-      Sound();
+ 
       break;
     case KEY_REC:
       Redraw1();
       mode = 1;
-      Sound();
+
       break;
     case KEY_SOURCE:
       mode= (mode+1)%8;
       pos = 0;
       lcd.clear_lcd(BLACK);      
-      Sound();
+  
       break;
     case KEY_STOP:
       mode= 2;
-      Sound();
+  
       break;
     case KEY_PAUSE:
       mode= 3;
@@ -498,16 +362,16 @@ void takeControlsKey(void){
       calibrate = false;
       ang = 0.0;
       lcd.clear_lcd(BLACK);
-      Sound();
+  
       break;
     case KEY_FULLSCR:
       mode= 4;
       pos = 0;
       lcd.clear_lcd(BLACK);
-      Sound();      
+       
       break;
     case KEY_POWER:
-      Sound();
+   
       mode= 5;
       ang = 1.0;
       lcd.clear_lcd(BLACK);
@@ -521,10 +385,8 @@ void takeControlsKey(void){
       lcd.clear_lcd(BLACK);
       break;
     case KEY_PLUS:
-      filtercoef += 0.0001;
       break;
     case KEY_MINUS:
-      filtercoef -= 0.0001;
       break;
     case KEY_UP:
       pwm+=10;
